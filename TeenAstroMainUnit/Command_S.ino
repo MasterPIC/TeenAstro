@@ -266,6 +266,7 @@ void Command_SX()
     case 'A':
       // :SXLA,VVVV# set user defined minAXIS1 (always negatif)
       i = (int)strtol(&command[5], NULL, 10);
+      i = max(min(i, 10 * abs(geoA1.LimMinAxis)),0);
       XEEPROM.writeInt(getMountAddress(EE_minAxis1), i);
       initLimitMinAxis1();
       replyValueSetShort(true);
@@ -273,6 +274,7 @@ void Command_SX()
     case 'B':
       // :SXLB,VVVV# set user defined maxAXIS1 (always positf)
       i = (int)strtol(&command[5], NULL, 10);
+      i = max(min(i, 10 * abs(geoA1.LimMaxAxis)), 0);
       XEEPROM.writeInt(getMountAddress(EE_maxAxis1), i);
       initLimitMaxAxis1();
       replyValueSetShort(true);
@@ -280,6 +282,7 @@ void Command_SX()
     case 'C':
       // :SXLC,VVVV# set user defined minAXIS2 (always positf)
       i = (int)strtol(&command[5], NULL, 10);
+      i = max(min(i, 10 * abs(geoA2.LimMinAxis)), 0);
       XEEPROM.writeInt(getMountAddress(EE_minAxis2), i);
       initLimitMinAxis2();
       replyValueSetShort(true);
@@ -287,6 +290,7 @@ void Command_SX()
     case 'D':
       // :SXLD,VVVV# set user defined maxAXIS2 (always positf)
       i = (int)strtol(&command[5], NULL, 10);
+      i = max(min(i, 10 * abs(geoA2.LimMaxAxis)), 0);
       XEEPROM.writeInt(getMountAddress(EE_maxAxis2), i);
       initLimitMaxAxis2();
       replyValueSetShort(true);
@@ -368,7 +372,7 @@ void Command_SX()
     case '0':
     {
       int h1, m1, m2, s1;
-      bool ok = !hmsToHms(&h1, &m1, &m2, &s1, &command[4], true);
+      bool ok = hmsToHms(&h1, &m1, &m2, &s1, &command[4], true);
       if (ok)
       {
         rtk.setClock(year(), month(), day(), h1, m1, s1, *localSite.longitude(), 0);
@@ -420,18 +424,41 @@ void Command_SX()
       {
         if (command[4] == 'D')
         {
-          backlashA2.inSeconds = i;
-          XEEPROM.writeInt(getMountAddress(EE_backlashAxis2), backlashA2.inSeconds);
-          backlashA2.inSteps = (int)round((double)backlashA2.inSeconds / geoA2.stepsPerArcSecond);
-          backlashA2.movedSteps = 0;
+          motorA2.backlashAmount = i;
+          XEEPROM.writeInt(getMountAddress(EE_motorA2backlashAmount), motorA2.backlashAmount);
+          staA2.setBacklash_inSteps(motorA2.backlashAmount, geoA2.stepsPerArcSecond);
           replyValueSetShort(true);
         }
         else if (command[4] == 'R')
         {
-          backlashA1.inSeconds = i;
-          XEEPROM.writeInt(getMountAddress(EE_backlashAxis1), backlashA1.inSeconds);
-          backlashA1.inSteps = (int)round((double)backlashA1.inSeconds / geoA1.stepsPerArcSecond);
-          backlashA1.movedSteps = 0;
+          motorA1.backlashAmount = i;
+          XEEPROM.writeInt(getMountAddress(EE_motorA1backlashAmount), motorA1.backlashAmount);
+          staA1.setBacklash_inSteps(motorA1.backlashAmount, geoA1.stepsPerArcSecond);
+          replyValueSetShort(true);
+        }
+        else replyNothing();
+      }
+      else replyNothing();
+    }
+    break;
+    case 'b':
+    {
+      // :SXMbn,VVVV# Set BacklashRate
+      int i;
+      if ((atoi2((char*)&command[6], &i)) && ((i >= 16) && (i <= 64)))
+      {
+        if (command[4] == 'D')
+        {
+          motorA2.backlashRate = i;
+          XEEPROM.write(getMountAddress(EE_motorA2backlashRate), motorA2.backlashRate);
+          staA2.SetBacklash_interval_Step(motorA2.backlashRate);
+          replyValueSetShort(true);
+        }
+        else if (command[4] == 'R')
+        {
+          motorA1.backlashRate = i;
+          XEEPROM.write(getMountAddress(EE_motorA1backlashRate), motorA1.backlashRate);
+          staA1.SetBacklash_interval_Step(motorA1.backlashRate);
           replyValueSetShort(true);
         }
         else replyNothing();
@@ -790,6 +817,7 @@ void Command_S(Command& process_command)
     bool ok = i > 0 && i < 5 && !isMountTypeFix;
     if (ok)
     {
+      reset_EE_Limit();
       XEEPROM.write(getMountAddress(EE_mountType), i);
       reboot_unit = true;
     }
@@ -1082,6 +1110,7 @@ void Command_S(Command& process_command)
     //                  1 on success
   {
     bool ok = dmsToDouble(&newTargetAzm, &command[2], false, highPrecision);
+    newTargetAzm = degRange(newTargetAzm + 180.);
     replyValueSetShort(ok);
   }
   break;
