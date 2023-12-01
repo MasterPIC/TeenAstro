@@ -215,7 +215,7 @@ void Command_SX()
     }
     case 'X':
       // :SXRX,VVVV# Set Rate for max Rate
-      XEEPROM.writeInt(getMountAddress(EE_maxRate), (int)strtol(&command[5], NULL, 10));
+      XEEPROM.writeUShort(getMountAddress(EE_maxRate), (int)strtol(&command[5], NULL, 10));
       initMaxRate();
       replyValueSetShort(true);
       break;
@@ -263,37 +263,53 @@ void Command_SX()
     // user defined limits
     switch (command[3])
     {
+    case 'R':
+      // :SXLR# reset user defined axis limit
+      reset_EE_Limit();
+      break;
     case 'A':
-      // :SXLA,VVVV# set user defined minAXIS1 (always negatif)
+      // :SXLA,VVVV# set user defined minAXIS1
       i = (int)strtol(&command[5], NULL, 10);
-      i = max(min(i, 10 * abs(geoA1.LimMinAxis)),0);
-      XEEPROM.writeInt(getMountAddress(EE_minAxis1), i);
-      initLimitMinAxis1();
-      replyValueSetShort(true);
+      if (i >= 10 * geoA1.LimMinAxis && i < XEEPROM.readShort(getMountAddress(EE_maxAxis1)))
+      {
+        XEEPROM.writeShort(getMountAddress(EE_minAxis1), i);
+        initLimitMinAxis1();
+        ok = true;
+      }
+      replyValueSetShort(ok);
       break;
     case 'B':
-      // :SXLB,VVVV# set user defined maxAXIS1 (always positf)
+      // :SXLB,VVVV# set user defined maxAXIS1
       i = (int)strtol(&command[5], NULL, 10);
-      i = max(min(i, 10 * abs(geoA1.LimMaxAxis)), 0);
-      XEEPROM.writeInt(getMountAddress(EE_maxAxis1), i);
-      initLimitMaxAxis1();
-      replyValueSetShort(true);
+      if (i <= 10 * geoA1.LimMaxAxis && i > XEEPROM.readShort(getMountAddress(EE_minAxis1)))
+      {
+        XEEPROM.writeShort(getMountAddress(EE_maxAxis1), i);
+        initLimitMaxAxis1();
+        ok = true;
+      }
+      replyValueSetShort(ok);
       break;
     case 'C':
-      // :SXLC,VVVV# set user defined minAXIS2 (always positf)
+      // :SXLC,VVVV# set user defined minAXIS2
       i = (int)strtol(&command[5], NULL, 10);
-      i = max(min(i, 10 * abs(geoA2.LimMinAxis)), 0);
-      XEEPROM.writeInt(getMountAddress(EE_minAxis2), i);
-      initLimitMinAxis2();
-      replyValueSetShort(true);
+      if (i >= 10 * geoA2.LimMinAxis && i < XEEPROM.readShort(getMountAddress(EE_maxAxis2)))
+      {
+        XEEPROM.writeShort(getMountAddress(EE_minAxis2), i);
+        initLimitMinAxis2();
+        ok = true;
+      }
+      replyValueSetShort(ok);
       break;
     case 'D':
-      // :SXLD,VVVV# set user defined maxAXIS2 (always positf)
+      // :SXLD,VVVV# set user defined maxAXIS2
       i = (int)strtol(&command[5], NULL, 10);
-      i = max(min(i, 10 * abs(geoA2.LimMaxAxis)), 0);
-      XEEPROM.writeInt(getMountAddress(EE_maxAxis2), i);
-      initLimitMaxAxis2();
-      replyValueSetShort(true);
+      if (i <= 10 * geoA2.LimMaxAxis && i > XEEPROM.readShort(getMountAddress(EE_minAxis2)))
+      {
+        XEEPROM.writeShort(getMountAddress(EE_maxAxis2), i);
+        initLimitMaxAxis2();
+        ok = true;
+      }
+      replyValueSetShort(ok);
       break;
     case 'E':
       // :SXLE,sVV.V# set user defined Meridian East Limit
@@ -379,7 +395,7 @@ void Command_SX()
       }
       replyValueSetShort(ok);
     }
-      break;
+    break;
     case '1':
       //  :SXT1MM/DD/YY#
       //          Change Local Date to MM/DD/YY
@@ -420,60 +436,68 @@ void Command_SX()
     {
       // :SXMBn,VVVV# Set Backlash
       int i;
-      if ((atoi2((char*)&command[6], &i)) && ((i >= 0) && (i <= 999)))
+      bool ok = !TelescopeBusy();
+      ok &= atoi2((char*)&command[6], &i);
+      ok &= ((i >= 0) && (i <= 999));
+      if (ok)
       {
+        ok = false;
         if (command[4] == 'D')
         {
           motorA2.backlashAmount = i;
-          XEEPROM.writeInt(getMountAddress(EE_motorA2backlashAmount), motorA2.backlashAmount);
+          XEEPROM.writeUShort(getMountAddress(EE_motorA2backlashAmount), motorA2.backlashAmount);
           staA2.setBacklash_inSteps(motorA2.backlashAmount, geoA2.stepsPerArcSecond);
-          replyValueSetShort(true);
+          ok = true;
         }
         else if (command[4] == 'R')
         {
           motorA1.backlashAmount = i;
-          XEEPROM.writeInt(getMountAddress(EE_motorA1backlashAmount), motorA1.backlashAmount);
+          XEEPROM.writeUShort(getMountAddress(EE_motorA1backlashAmount), motorA1.backlashAmount);
           staA1.setBacklash_inSteps(motorA1.backlashAmount, geoA1.stepsPerArcSecond);
-          replyValueSetShort(true);
+          ok = true;
         }
-        else replyNothing();
       }
-      else replyNothing();
+      replyValueSetShort(ok);
     }
     break;
     case 'b':
     {
       // :SXMbn,VVVV# Set BacklashRate
       int i;
-      if ((atoi2((char*)&command[6], &i)) && ((i >= 16) && (i <= 64)))
+      bool ok = !TelescopeBusy();
+      ok &= atoi2((char*)&command[6], &i);
+      ok &= ((i >= 16) && (i <= 64));
+      if (ok)
       {
+        ok = false;
         if (command[4] == 'D')
         {
           motorA2.backlashRate = i;
           XEEPROM.write(getMountAddress(EE_motorA2backlashRate), motorA2.backlashRate);
           staA2.SetBacklash_interval_Step(motorA2.backlashRate);
-          replyValueSetShort(true);
+          ok = true;
         }
         else if (command[4] == 'R')
         {
           motorA1.backlashRate = i;
           XEEPROM.write(getMountAddress(EE_motorA1backlashRate), motorA1.backlashRate);
           staA1.SetBacklash_interval_Step(motorA1.backlashRate);
-          replyValueSetShort(true);
+          ok = true;
         }
-        else replyNothing();
       }
-      else replyNothing();
+      replyValueSetShort(ok);
     }
     break;
     case 'G':
     {
       // :SXMGn,VVVV# Set Gear
       unsigned long i;
-      bool ok = false;
-      if ((command[4] == 'D' || command[4] == 'R')
-        && strlen(&command[6]) > 1 && strlen(&command[6]) < 11)
+      bool ok = !TelescopeBusy();
+      ok &= (command[4] == 'D' || command[4] == 'R');
+      ok &= strlen(&command[6]) > 1 && strlen(&command[6]) < 11;
+      if (ok)
       {
+        ok = false;
         i = strtoul(&command[6], NULL, 10);
         if (command[4] == 'D')
         {
@@ -483,7 +507,6 @@ void Command_SX()
             cli();
             staA2.pos = fact * staA2.pos;
             sei();
-            StopAxis2();
             motorA2.gear = i;
             XEEPROM.writeULong(getMountAddress(EE_motorA2gear), i);
             ok = true;
@@ -497,7 +520,6 @@ void Command_SX()
             cli();
             staA1.pos = fact * staA1.pos;
             sei();
-            StopAxis1();
             motorA1.gear = i;
             XEEPROM.writeULong(getMountAddress(EE_motorA1gear), i);
             ok = true;
@@ -515,11 +537,13 @@ void Command_SX()
     {
       // :SXMBn,VVVV# Set Step per Rotation
       int i;
-      bool ok = false;
-      if ((command[4] == 'D' || command[4] == 'R')
-        && (strlen(&command[6]) > 1) && (strlen(&command[6]) < 11)
-        && atoi2((char*)&command[6], &i))
+      bool ok = !TelescopeBusy();
+      ok &= (command[4] == 'D' || command[4] == 'R');
+      ok &= (strlen(&command[6]) > 1) && (strlen(&command[6]) < 11);
+      ok &= atoi2((char*)&command[6], &i);
+      if (ok)
       {
+        ok = false;
         if (command[4] == 'D')
         {
           if (!motorA2.isStepRotFix)
@@ -528,9 +552,8 @@ void Command_SX()
             cli();
             staA2.pos = fact * staA2.pos;
             sei();
-            StopAxis2();
             motorA2.stepRot = (unsigned int)i;
-            XEEPROM.writeInt(getMountAddress(EE_motorA2stepRot), i);
+            XEEPROM.writeUShort(getMountAddress(EE_motorA2stepRot), i);
             ok = true;
           }
         }
@@ -542,13 +565,11 @@ void Command_SX()
             cli();
             staA1.pos = fact * staA1.pos;
             sei();
-            StopAxis1();
             motorA1.stepRot = (unsigned int)i;
-            XEEPROM.writeInt(getMountAddress(EE_motorA1stepRot), i);
+            XEEPROM.writeUShort(getMountAddress(EE_motorA1stepRot), i);
             ok = true;
           }
         }
-
       }
       if (ok)
       {
@@ -562,12 +583,14 @@ void Command_SX()
       // :SXMMn,V# Set Microstep
       // for example :GRXMMR3# for 1/8 microstep on the first axis 
       int i;
-      bool ok = false;
-      if ((command[4] == 'D' || command[4] == 'R')
-        && strlen(&command[6]) == 1
-        && atoi2(&command[6], &i)
-        && ((i >= 1) && (i < 9)))
+      bool ok = !TelescopeBusy();
+      ok &= (command[4] == 'D' || command[4] == 'R');
+      ok &= strlen(&command[6]) == 1;
+      ok &= atoi2(&command[6], &i);
+      ok &= (i >= 1 && i < 9);
+      if (ok)
       {
+        ok = false;
         if (command[4] == 'D')
         {
           if (!motorA2.isMicroFix)
@@ -576,7 +599,6 @@ void Command_SX()
             cli();
             staA2.pos = fact * staA2.pos;
             sei();
-            StopAxis2();
             motorA2.micro = i;
             motorA2.driver.setMicrostep(motorA2.micro);;
             XEEPROM.write(getMountAddress(EE_motorA2micro), motorA2.micro);
@@ -591,7 +613,6 @@ void Command_SX()
             cli();
             staA1.pos = fact * staA1.pos;
             sei();
-            StopAxis1();
             motorA1.micro = i;
             motorA1.driver.setMicrostep(motorA1.micro);
             XEEPROM.write(getMountAddress(EE_motorA1micro), motorA1.micro);
@@ -817,7 +838,7 @@ void Command_S(Command& process_command)
     bool ok = i > 0 && i < 5 && !isMountTypeFix;
     if (ok)
     {
-      reset_EE_Limit();
+      force_reset_EE_Limit();
       XEEPROM.write(getMountAddress(EE_mountType), i);
       reboot_unit = true;
     }
@@ -982,21 +1003,24 @@ void Command_S(Command& process_command)
       replyNothing();
     break;
   case 'm':
+    //  :Sm#   Sets the meridian pier-side for the next Target, TeenAstro LX200 command
+    //         Returns: E#, W#, N# (none/parked), ?# (Meridian flip in progress)
+    //         A # terminated string with the pier side.
     if ((command[2] != 0) && (strlen(&command[2]) < 2))
     {
       if (command[2] == 'N')
       {
-        newTargetPierSide = PIER_NOTVALID;
+        newTargetPoleSide = POLE_NOTVALID;
         replyValueSetShort(true);
       }
       else if (command[2] == 'E')
       {
-        newTargetPierSide = PIER_EAST;
+        newTargetPoleSide = isAltAZ() || localSite.northHemisphere() ? POLE_UNDER : POLE_OVER;
         replyValueSetShort(true);
       }
       else if (command[2] == 'W')
       {
-        newTargetPierSide = PIER_WEST;
+        newTargetPoleSide = isAltAZ() || localSite.northHemisphere() ? POLE_OVER : POLE_UNDER;
         replyValueSetShort(true);
       }
       else replyNothing();
@@ -1056,6 +1080,7 @@ void Command_S(Command& process_command)
     {
       localSite.setLat(f);
       initCelestialPole();
+      initLimit();
       initHome();
       initTransformation(true);
       syncAtHome();

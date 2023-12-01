@@ -40,7 +40,7 @@ static void MoveAxis(GuideAxis* guideA, StatusAxis* staA, const bool BW, const G
       GuidingState = Mode;
       BW ? guideA->moveBW() : guideA->moveFW();
       atHome = false;
-      guideA->duration = -1;
+      guideA->duration = 0UL;
     }
   }
 }
@@ -74,7 +74,7 @@ static void MoveAxisAtRate(GuideAxis* guideA, StatusAxis* staA, const double new
       GuidingState = Guiding::GuidingAtRate;
       newrate > 0 ? guideA->moveFW() : guideA->moveBW();
       atHome = false;
-      guideA->duration = -1;
+      guideA->duration = 0UL;
     }
   }
 }
@@ -210,7 +210,7 @@ void CheckSpiral()
   Coord_EQ EQ_prev = Coord_LO(0, dl_prev * DEG_TO_RAD, hl_prev * DEG_TO_RAD).To_Coord_EQ(helper.T);
   Coord_EQ EQ_next = Coord_LO(0, dl_next * DEG_TO_RAD, hl_next * DEG_TO_RAD).To_Coord_EQ(helper.T);
 
-  PierSide side_tmp = GetPierSide();
+  PoleSide side_tmp = GetPoleSide();
 
   RateFromMovingTarget(EQ_prev, EQ_next,
     0.002*dt, side_tmp, doesRefraction.forGoto,

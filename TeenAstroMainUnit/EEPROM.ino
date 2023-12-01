@@ -44,7 +44,7 @@ void writeDefaultMount()
   XEEPROM.write(getMountAddress(EE_dpmW), 0);
   XEEPROM.write(getMountAddress(EE_dup), (12 - 9) * 15);
   XEEPROM.write(getMountAddress(EE_dpmDistanceFromPole), 181);
-  reset_EE_Limit();
+  force_reset_EE_Limit();
 
 
   // init the Park/Home status
@@ -62,7 +62,7 @@ void writeDefaultMount()
   XEEPROM.write(getMountAddress(EE_DefaultRate), 3);
 
   // init the default maxRate
-  XEEPROM.writeInt(getMountAddress(EE_maxRate), DefaultR4);
+  XEEPROM.writeUShort(getMountAddress(EE_maxRate), DefaultR4);
 
   // init degree for acceleration 1°
   XEEPROM.write(getMountAddress(EE_degAcc), (uint8_t)(1 * 10));
@@ -190,7 +190,7 @@ void initMount()
   initmotor(false);
   initencoder();
   syncEwithT();
-  
+
 #ifndef keepTrackingOnWhenFarFromPole
   distanceFromPoleToKeepTrackingOn = 181;
 #endif
@@ -227,48 +227,42 @@ void initTransformation(bool reset)
   {
     if (isAltAZ())
     {
-      if (*localSite.latitude() > 0)
-      {
-        alignment.addReference(0, 0, 0, 0);
-        alignment.addReference(0, M_PI_2, 0, M_PI_2);
-      }
-      else
-      {
-        alignment.addReference(0, 0, M_PI, 0);
-        alignment.addReference(0, M_PI_2, M_PI, M_PI_2);
-      }
+      double rot = localSite.northHemisphere() ? 0 : M_PI;
+      alignment.addReference(0, 0, rot, 0);
+      alignment.addReference(0, M_PI_2, rot, M_PI_2);
       alignment.calculateThirdReference();
     }
     else
-    { 
+    {
       double Lat = *localSite.latitude() * DEG_TO_RAD;
+      double sign = localSite.northHemisphere() ? 1 : -1;
       if (doesRefraction.forPole && abs(*localSite.latitude()) > 10)
       {
         Lat = abs(Lat);
         LA3::Topocentric2Apparent(Lat, RefrOptForPole());
-        if (*localSite.latitude() < 0)
-          Lat = -Lat;
+        Lat *= sign;
       }
       if (mountType == MOUNT_TYPE_GEM)
       {
         Coord_HO HO1 = Coord_HO(0, 45 * DEG_TO_RAD, 90 * DEG_TO_RAD, false);
         Coord_EQ EQ1 = HO1.To_Coord_EQ(Lat);
-        Coord_IN IN1 = Coord_IN(0, EQ1.Dec(), EQ1.Ha() - M_PI_2);
+        Coord_IN IN1 = Coord_IN(0, sign * EQ1.Dec(), sign * EQ1.Ha() - M_PI_2);
 
         Coord_HO HO2 = Coord_HO(0, 45 * DEG_TO_RAD, 270 * DEG_TO_RAD, false);
         Coord_EQ EQ2 = HO2.To_Coord_EQ(Lat);
-        Coord_IN IN2 = Coord_IN(0, EQ2.Dec(), EQ2.Ha() - M_PI_2);
+        Coord_IN IN2 = Coord_IN(0, sign * EQ2.Dec(), sign * EQ2.Ha() - M_PI_2);
         alignment.addReference(HO1.Az(), HO1.Alt(), IN1.Axis1(), IN1.Axis2());
-        alignment.addReference(HO2.Az(), HO2.Alt(), IN2.Axis1(), IN2.Axis2());      }
+        alignment.addReference(HO2.Az(), HO2.Alt(), IN2.Axis1(), IN2.Axis2());
+      }
       else
       {
         Coord_HO HO1 = Coord_HO(0, 45 * DEG_TO_RAD, 90 * DEG_TO_RAD, false);
         Coord_EQ EQ1 = HO1.To_Coord_EQ(Lat);
-        Coord_IN IN1 = Coord_IN(0, EQ1.Dec(), EQ1.Ha() );
+        Coord_IN IN1 = Coord_IN(0, sign * EQ1.Dec(), sign * EQ1.Ha());
 
         Coord_HO HO2 = Coord_HO(0, 45 * DEG_TO_RAD, 270 * DEG_TO_RAD, false);
         Coord_EQ EQ2 = HO2.To_Coord_EQ(Lat);
-        Coord_IN IN2 = Coord_IN(0, EQ2.Dec(), EQ2.Ha() );
+        Coord_IN IN2 = Coord_IN(0, sign * EQ2.Dec(), sign * EQ2.Ha());
         alignment.addReference(HO1.Az(), HO1.Alt(), IN1.Axis1(), IN1.Axis2());
         alignment.addReference(HO2.Az(), HO2.Alt(), IN2.Axis1(), IN2.Axis2());
       }
@@ -281,43 +275,22 @@ void initTransformation(bool reset)
 
 void initCelestialPole()
 {
+  geoA1.poleDef = 0L;
+  geoA2.poleDef = geoA2.quaterRot;
   if (isAltAZ())
   {
-    geoA1.poleDef =  0L;
     geoA1.LimMinAxis = -180;
     geoA1.LimMaxAxis = 180;
-    geoA2.poleDef = geoA2.quaterRot;
     geoA2.LimMinAxis = -20;
     geoA2.LimMaxAxis = 90;
   }
   else
   {
-    if (mountType == MOUNT_TYPE_GEM)
-    {
-      geoA1.poleDef = 0;
-      geoA1.LimMinAxis = -180;
-      geoA1.LimMaxAxis = 180;
-    }
-    else
-    {
-      geoA1.poleDef = 0L;
-      geoA1.LimMinAxis = -180;
-      geoA1.LimMaxAxis = 180;
-    }
-    if (*localSite.latitude() < 0)
-    {
-      geoA2.poleDef = -geoA2.quaterRot;
-      geoA2.LimMinAxis = -270;
-      geoA2.LimMaxAxis = 90;
-    }
-    else
-    {
-      geoA2.poleDef = geoA2.quaterRot;
-      geoA2.LimMinAxis = -90;
-      geoA2.LimMaxAxis = 270;
-    }
+    geoA1.LimMinAxis = -180;
+    geoA1.LimMaxAxis = 180;
+    geoA2.LimMinAxis = -90;
+    geoA2.LimMaxAxis = 270;
   }
-  HADir = *localSite.latitude() > 0 ? HADirNCPInit : HADirSCPInit;
 }
 
 void initmotor(bool deleteAlignment)
@@ -399,18 +372,18 @@ void readEEPROMmotorCurrent()
 
 void readEEPROMmotor()
 {
-  motorA1.backlashAmount = XEEPROM.readInt(getMountAddress(EE_motorA1backlashAmount));
+  motorA1.backlashAmount = XEEPROM.readUShort(getMountAddress(EE_motorA1backlashAmount));
   if (motorA1.backlashAmount > 999 || motorA1.backlashAmount < 0)
   {
     motorA1.backlashAmount = 0;
-    XEEPROM.writeInt(getMountAddress(EE_motorA1backlashAmount),0);
+    XEEPROM.writeUShort(getMountAddress(EE_motorA1backlashAmount), 0);
   }
 
-  motorA2.backlashAmount = XEEPROM.readInt(getMountAddress(EE_motorA2backlashAmount));
+  motorA2.backlashAmount = XEEPROM.readUShort(getMountAddress(EE_motorA2backlashAmount));
   if (motorA2.backlashAmount > 999 || motorA2.backlashAmount < 0)
   {
     motorA2.backlashAmount = 0;
-    XEEPROM.writeInt(getMountAddress(EE_motorA2backlashAmount), 0);
+    XEEPROM.writeUShort(getMountAddress(EE_motorA2backlashAmount), 0);
   }
 
   motorA1.backlashRate = XEEPROM.read(getMountAddress(EE_motorA1backlashRate));
@@ -440,7 +413,7 @@ void readEEPROMmotor()
   motorA1.stepRot = D_motorA1stepRot;
   motorA1.isStepRotFix = true;
 #else
-  motorA1.stepRot = XEEPROM.readInt(getMountAddress(EE_motorA1stepRot));
+  motorA1.stepRot = XEEPROM.readUShort(getMountAddress(EE_motorA1stepRot));
   motorA1.isStepRotFix = false;
 #endif 
 
@@ -488,7 +461,7 @@ void readEEPROMmotor()
   motorA2.stepRot = D_motorA2stepRot;
   motorA2.isStepRotFix = true;
 #else
-  motorA2.stepRot = XEEPROM.readInt(getMountAddress(EE_motorA2stepRot));
+  motorA2.stepRot = XEEPROM.readUShort(getMountAddress(EE_motorA2stepRot));
   motorA2.isStepRotFix = false;
 #endif 
 
@@ -527,20 +500,20 @@ void readEEPROMmotor()
 void writeDefaultEEPROMmotor()
 {
   // init (clear) the backlash amounts
-  XEEPROM.writeInt(getMountAddress(EE_motorA1backlashAmount), 0);
+  XEEPROM.writeUShort(getMountAddress(EE_motorA1backlashAmount), 0);
   XEEPROM.write(getMountAddress(EE_motorA1backlashRate), 16);
-  XEEPROM.writeULong(getMountAddress(EE_motorA1gear), 1800*1000);
-  XEEPROM.writeInt(getMountAddress(EE_motorA1stepRot), 200);
+  XEEPROM.writeULong(getMountAddress(EE_motorA1gear), 1800 * 1000);
+  XEEPROM.writeUShort(getMountAddress(EE_motorA1stepRot), 200);
   XEEPROM.write(getMountAddress(EE_motorA1micro), 4);
   XEEPROM.write(getMountAddress(EE_motorA1reverse), 0);
   XEEPROM.write(getMountAddress(EE_motorA1highCurr), 10);
   XEEPROM.write(getMountAddress(EE_motorA1lowCurr), 10);
   XEEPROM.write(getMountAddress(EE_motorA1silent), 0);
 
-  XEEPROM.writeInt(getMountAddress(EE_motorA1backlashAmount), 0);
+  XEEPROM.writeUShort(getMountAddress(EE_motorA1backlashAmount), 0);
   XEEPROM.write(getMountAddress(EE_motorA2backlashRate), 16);
-  XEEPROM.writeULong(getMountAddress(EE_motorA2gear), 1800*1000);
-  XEEPROM.writeInt(getMountAddress(EE_motorA2stepRot), 200);
+  XEEPROM.writeULong(getMountAddress(EE_motorA2gear), 1800 * 1000);
+  XEEPROM.writeUShort(getMountAddress(EE_motorA2stepRot), 200);
   XEEPROM.write(getMountAddress(EE_motorA2micro), 4);
   XEEPROM.write(getMountAddress(EE_motorA2reverse), 0);
   XEEPROM.write(getMountAddress(EE_motorA2highCurr), 10);

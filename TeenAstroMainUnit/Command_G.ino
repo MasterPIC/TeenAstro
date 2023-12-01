@@ -367,10 +367,14 @@ void Command_GX()
     case '3':  
     case '4':
     {
+      //Other way to get intsrument angle to verify the pipeline
       Coord_IN IN_T = getEqu(*localSite.latitude() * DEG_TO_RAD).To_Coord_IN(*localSite.latitude() * DEG_TO_RAD, RefrOptForGoto(), alignment.Tinv);
       f = IN_T.Axis1() * RAD_TO_DEG;
       f1 = IN_T.Axis2() * RAD_TO_DEG;
-      Angle2InsrtAngle(GetPierSide(), &f, &f1, localSite.latitude(), geoA1.poleDef);
+      long Axis1_out, Axis2_out;
+      Angle2Step(f, f1, GetPoleSide(), &Axis1_out, &Axis2_out);
+      f = Axis1_out / geoA1.stepsPerDegree;
+      f1 = Axis2_out / geoA2.stepsPerDegree;
       command[3] == '3' ? doubleToDms(reply, &f, true, true, highPrecision) : doubleToDms(reply, &f1, true, true, highPrecision);
       strcat(reply, "#");
     }
@@ -426,7 +430,7 @@ void Command_GX()
       break;
     case 'X':
       // :GXRX# return Max Slew rate
-      sprintf(reply, "%d#", XEEPROM.readInt(getMountAddress(EE_maxRate)));
+      sprintf(reply, "%d#", XEEPROM.readUShort(getMountAddress(EE_maxRate)));
       break;
     case 'r':
       // :GXRr# Requested RA traking rate in sideral
@@ -461,23 +465,23 @@ void Command_GX()
     switch (command[3])
     {
     case 'A':
-      // :GXLA# get user defined minAXIS1 (always negatif)
-      i = XEEPROM.readInt(getMountAddress(EE_minAxis1));
+      // :GXLA# get user defined minAXIS1 
+      i = XEEPROM.readShort(getMountAddress(EE_minAxis1));
       sprintf(reply, "%d#", i);
       break;
     case 'B':
-      // :GXLB# get user defined maxAXIS1 (always positf)
-      i = XEEPROM.readInt(getMountAddress(EE_maxAxis1));
+      // :GXLB# get user defined maxAXIS1 
+      i = XEEPROM.readShort(getMountAddress(EE_maxAxis1));
       sprintf(reply, "%d#", i);
       break;
     case 'C':
-      // :GXLC# get user defined minAXIS2 (always positf)
-      i = XEEPROM.readInt(getMountAddress(EE_minAxis2));
+      // :GXLC# get user defined minAXIS2 
+      i = XEEPROM.readShort(getMountAddress(EE_minAxis2));
       sprintf(reply, "%d#", i);
       break;
     case 'D':
-      // :GXLD# get user defined maxAXIS2 (always positf)
-      i = XEEPROM.readInt(getMountAddress(EE_maxAxis2));
+      // :GXLD# get user defined maxAXIS2 
+      i = XEEPROM.readShort(getMountAddress(EE_maxAxis2));
       sprintf(reply, "%d#", i);
       break;
     case 'E':
@@ -505,6 +509,35 @@ void Command_GX()
     case 'S':
       // :GXLS# return user defined minimum distance in degreee from pole to keep tracking on for 6 hours after transit
       sprintf(reply, "%02d*#", distanceFromPoleToKeepTrackingOn);
+      break;
+    default:
+      replyLongUnknow();
+      break;
+    }
+    break;
+  case 'l':
+    // :GXln Mount type defined limits
+    switch (command[3])
+    {
+    case 'A':
+      // :GXlA#  Mount type defined minAXIS1
+      i = geoA1.LimMinAxis;
+      sprintf(reply, "%d#", i);
+      break;
+    case 'B':
+      // :GXlB#  Mount type defined maxAXIS1
+      i = geoA1.LimMaxAxis;
+      sprintf(reply, "%d#", i);
+      break;
+    case 'C':
+      // :GXlC#  Mount type defined minAXIS2
+      i = geoA2.LimMinAxis;
+      sprintf(reply, "%d#", i);
+      break;
+    case 'D':
+      // :GXlD#  Mount type defined maxAXIS2
+      i = geoA2.LimMaxAxis;
+      sprintf(reply, "%d#", i);
       break;
     default:
       replyLongUnknow();
@@ -551,7 +584,7 @@ void Command_GX()
   case 'I':
   {
     // :GXI#   Get telescope Status
-    PierSide currentSide = GetPierSide();
+    PoleSide currentSide = GetPoleSide();
     for (i = 0; i < 50; i++)
       reply[i] = ' ';
     i = 0;
@@ -566,14 +599,14 @@ void Command_GX()
     {
       reply[5] = 'G';
     }
-    if (GuidingState == GuidingPulse || GuidingState == GuidingST4) reply[6] = '*';
+    if (isGuidingStar()) reply[6] = '*';
     else if (GuidingState == GuidingRecenter) reply[6] = '+';
     else if (GuidingState == GuidingAtRate) reply[6] = '-';
     if (guideA1.isMFW()) reply[7] = '>';
     else if (guideA1.isMBW()) reply[7] = '<';
     else if (guideA1.isBraking()) reply[7] = 'b';
 
-    if (currentSide == PIER_WEST)
+    if (currentSide == POLE_OVER)
     {
       if (guideA2.isMBW()) reply[8] = '^';
       else if (guideA2.isMFW()) reply[8] = '_';
@@ -622,8 +655,9 @@ void Command_GX()
     else
       reply[12] = 'U';
 
-    if (currentSide == PIER_EAST) reply[13] = 'E';
-    if (currentSide == PIER_WEST) reply[13] = 'W';
+
+    if (currentSide == POLE_UNDER) reply[13] = isAltAZ() || localSite.northHemisphere() ? 'E' : 'W';
+    if (currentSide == POLE_OVER) reply[13] = isAltAZ() || localSite.northHemisphere() ? 'W' : 'E';
 
     char val = 0;
     bitWrite(val, 0, hasGNSS);
@@ -680,7 +714,7 @@ void Command_GX()
     case 'P':
       // :GXJP# get if pulse guiding
     {
-      if (GuidingState == GuidingPulse || GuidingState == GuidingST4)
+      if (isGuidingStar())
       {
         replyLongTrue();
       }
@@ -1091,10 +1125,11 @@ void  Command_G()
     //  :Gm#   Gets the meridian pier-side, TeenAstro LX200 command
     //         Returns: E#, W#, N# (none/parked), ?# (Meridian flip in progress)
     //         A # terminated string with the pier side.
-    PierSide currentSide = GetPierSide();
+    PoleSide currentSide = GetPoleSide();
     strcpy(reply, "?#");
-    if (currentSide == PIER_EAST) reply[0] = 'E';
-    if (currentSide == PIER_WEST) reply[0] = 'W';
+    if (currentSide == POLE_UNDER) reply[0] = isAltAZ() || localSite.northHemisphere() ? 'E' : 'W';
+    if (currentSide == POLE_OVER) reply[0] = isAltAZ() || localSite.northHemisphere() ? 'W' : 'E';
+    strcat(reply, "#");
     break;
   }
   case 'n':
