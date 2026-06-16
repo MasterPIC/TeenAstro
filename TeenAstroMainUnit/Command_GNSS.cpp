@@ -4,10 +4,14 @@
  */
 #include "Command.h"
 
-#define N_GNSS_OBS 3
+#define GPS_COMPARISON_PERIOD_MS      2000
+#define GPS_VALID_TIMEOUT_MS    2000
+
+#define N_GNSS_OBS 12
 static double dlat[N_GNSS_OBS];
 static double dlng[N_GNSS_OBS];
 static double dele[N_GNSS_OBS];
+static int numSamples=0;
 
 void resetDeltaLoc()
 {
@@ -17,6 +21,7 @@ void resetDeltaLoc()
     dlng[i] = 0;
     dele[i] = 0;
   }
+  numSamples = 0;
 }
 
 
@@ -48,25 +53,25 @@ bool iSGNSSValid()
 
 bool GNSSTimeIsValid()
 {
-  return mount.gnss.time.isValid() && mount.gnss.time.age() < 5000 &&  mount.gnss.date.isValid() && mount.gnss.date.age() < 5000;
+  return mount.gnss.time.isValid() && mount.gnss.time.age() < GPS_VALID_TIMEOUT_MS &&  mount.gnss.date.isValid() && mount.gnss.date.age() < GPS_VALID_TIMEOUT_MS;
 }
 
 bool GNSSLocationIsValid()
 {
-  return mount.gnss.location.isValid() && mount.gnss.location.age() < 5000 &&
-    mount.gnss.altitude.isValid() && mount.gnss.altitude.age() < 5000;
+  return mount.gnss.location.isValid() && mount.gnss.location.age() < GPS_VALID_TIMEOUT_MS &&
+    mount.gnss.altitude.isValid() && mount.gnss.altitude.age() < GPS_VALID_TIMEOUT_MS;
 }
 
 bool isHdopSmall()
 {
-  return mount.gnss.hdop.isValid() && mount.gnss.hdop.age() < 5000 && mount.gnss.hdop.hdop() < 2.0;
+  return mount.gnss.hdop.isValid() && mount.gnss.hdop.age() < GPS_VALID_TIMEOUT_MS && mount.gnss.hdop.hdop() < 2.0;
 }
 
 bool isTimeSyncWithGNSS()
 {
   static unsigned long t1 = 0;
   static bool lastreply = false;
-  if (millis() - t1 > 5000)
+  if (millis() - t1 > GPS_COMPARISON_PERIOD_MS  && mount.gnss.location.isUpdated())
   {
     TinyGPSDate d = mount.gnss.date;
     TinyGPSTime t = mount.gnss.time;
@@ -83,6 +88,7 @@ double std_dev(double* val, int nval)
 {
   double s = 0.0;
   double m = 0.0;
+  double d; 
   for (int i = 0; i < nval; i++)
   {
     m += val[i];
@@ -90,9 +96,20 @@ double std_dev(double* val, int nval)
   m /= nval;
   for (int i = 0; i < nval; i++)
   {
-    s += pow(val[i] - m, 2);
+    d= val[i] - m;
+    s += d * d;
   }
-  return sqrt(s / (nval - 1));
+  return sqrt(s / nval );
+}
+
+double mean(double* val, int nval)
+{
+  double m = 0.0;
+  for (int i = 0; i < nval; i++)
+  {
+    m += val[i];
+  }
+  return m/nval;
 }
 
 bool isLocationSyncWithGNSS()
@@ -100,7 +117,7 @@ bool isLocationSyncWithGNSS()
   static int i = 0;
   static unsigned long t1 = 0;
   static bool lastreply = false;
-  if (millis() - t1 > 5000)
+  if (millis() - t1 > GPS_COMPARISON_PERIOD_MS  && mount.gnss.location.isUpdated())
   {
     TinyGPSLocation l = mount.gnss.location;
     TinyGPSAltitude a = mount.gnss.altitude;
@@ -108,15 +125,14 @@ bool isLocationSyncWithGNSS()
     dlng[i] = 3600*fabs(haRange(*localSite.longitude() - (-l.lng())));
     dlat[i] = 3600*fabs(*localSite.latitude() - l.lat());
     dele[i] = fabs(*localSite.elevation() - a.meters());
-    double dlng_s= std_dev(dlng, N_GNSS_OBS);
-    double dlat_s = std_dev(dlat, N_GNSS_OBS);
-    double dele_s = std_dev(dele, N_GNSS_OBS);
-    lastreply = dlng[i] < max(5 * dlng_s, 2);
-    lastreply &= dlat[i] < max(5 * dlat_s, 2);
-    lastreply &= dele[i] < max(5 * dele_s, 20);
-    lastreply &= dlng_s < 2;
-    lastreply &= dlat_s < 2;
-    lastreply &= dele_s < 20;
+    if (numSamples< N_GNSS_OBS)
+        numSamples++;
+    double dlng_s= max(std_dev(dlng, min(numSamples, N_GNSS_OBS)),1);
+    double dlat_s = max(std_dev(dlat, min(numSamples, N_GNSS_OBS)),1);
+    double dele_s = max(std_dev(dele, min(numSamples, N_GNSS_OBS)),20);
+    lastreply = fabs(dlng[i] - mean (dlng, min(numSamples,N_GNSS_OBS))) < 2 * dlng_s && fabs(dlng[i])<2;
+    lastreply &= fabs(dlat[i] - mean (dlat, min(numSamples,N_GNSS_OBS))) < 2 * dlat_s && fabs(dlat[i])<2;
+    lastreply &= fabs(dele[i] - mean (dele, min(numSamples,N_GNSS_OBS))) < 2 * dele_s && fabs(dele[i])<30;
     i++;
     if (i == N_GNSS_OBS)
       i = 0;
